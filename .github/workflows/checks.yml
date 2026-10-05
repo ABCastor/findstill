@@ -1,0 +1,45 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python scripts/check_source.py
+  behaviour:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra test --python 3.12
+      - run: uv build
+      - run: uv pip install --reinstall --no-deps --python .venv/bin/python dist/*.whl
+      - run: .venv/bin/python -m pytest -q
+      - name: Verify installed package resources
+        run: |
+          .venv/bin/python - <<'PY'
+          import importlib.resources as resources
+          import media_search
+          from pathlib import Path
+          assert 'site-packages' in Path(media_search.__file__).parts
+          package = resources.files('media_search')
+          assert (package / 'static/index.html').is_file()
+          assert (package / 'native/ocr.swift').is_file()
+          print('Installed wheel module, dashboard and native OCR source present')
+          PY
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/check_privacy.py

@@ -1,0 +1,34 @@
+
+/* Chip stands ON the line: his drawing's ground (y 88 of 92) lands on the rule's centre. "by Castor" sits 8px
+   beside him; Castor's asterisk is typed, not drawn: the Literata glyph at the word's own size and weight, in
+   --human, on the word's baseline, exactly where typing "Castor*" puts it (16 September 2026). Under the line,
+   bottom-left like a footnote, "we give a dam*": the words start 2px from Chip's left edge with their cap line
+   10px under the rule's centre, and the drawn underline lives inside the words, 1px past each end, never under
+   the asterisk. No arrow. Vertical geometry rides the browser's cap and baseline edges (text-box: trim-both
+   cap alphabetic), the typed asterisk included. */
+.sig{position:relative;display:flex;align-items:flex-end;margin:3rem 0 40px;padding:0;border-bottom:1px solid var(--rule)}
+.water{position:relative;top:2.26px;display:block;flex:0 0 auto;width:44px;height:40.48px}
+.chip{display:block;width:100%;height:auto;overflow:visible;color:var(--ink)}  /* never crop the tail: at the low end of the wag it swings 2.5px below the drawing's own frame, and a browser clips an inline svg to its frame by default */
+.c-tail{transform-box:view-box;transform-origin:37px 77px}
+.c-eye{transform-box:fill-box;transform-origin:50% 50%}
+.sig:hover .c-tail{animation:wag .9s var(--ease) .35s 2}
+.sig:hover .c-eye{animation:blink .5s var(--ease) .7s 1}
+@keyframes wag{0%,100%{transform:rotate(0)}30%{transform:rotate(18deg)}70%{transform:rotate(6deg)}}
+@keyframes blink{0%,100%{transform:scaleY(1)}45%,55%{transform:scaleY(.08)}}
+.sig .words{display:flex;flex-direction:column;align-items:flex-start;margin-left:8px;padding-bottom:10px}
+.sig .qt,.sig .byt,.sig .wordmark{display:block;line-height:1;text-box:trim-both cap alphabetic}
+.sig .quip{position:absolute;left:2px;top:calc(100% + 10.5px);display:flex;align-items:flex-start;font-family:var(--hand);font-weight:500;font-size:17px;color:var(--ink)}
+.sig .qt{position:relative}
+.sig .qt .ul{position:absolute;left:-1px;width:calc(100% + 2px);top:calc(100% + 4px);height:6px;color:var(--human);overflow:visible}  /* inside the words: 1px past each end, never under the asterisk. The width is explicit because an inline svg is a replaced element: left plus right never stretched it, and its 120:8 ratio at 6px tall held it at 90px whatever the words */
+.sig .by{display:flex;align-items:flex-end;gap:6px}
+.sig .byt{font-size:14px;color:var(--quiet)}
+.sig .lock{display:flex;align-items:baseline}
+.sig a.lock{color:inherit;text-decoration:none}  /* the lockup is the way to the studio, on every product (16 September 2026) */
+.sig .wordmark{font-family:var(--word);font-weight:560;font-variation-settings:'opsz' 72;letter-spacing:-.055em;font-size:30px;color:var(--ink)}
+.sig .ast{display:block;flex:0 0 auto}
+.sig .quip .ast{width:8.89px;height:8.89px;margin:-1.2px 0 0 .5px}  /* a typed asterisk's size in Rando Sans at 17px: a 7.04px span, its top on the ascender; six arms hold at 1x from a 6.8px span */
+.sig .lock .ast{display:inline;font-family:var(--word);font-weight:560;font-variation-settings:'opsz' 72;font-size:30px;font-style:normal;line-height:1;color:var(--human);margin:0;text-box:trim-both cap alphabetic}  /* a typed asterisk, as everywhere on the site since 16 September 2026: the glyph, the word's size, on the baseline. It carries the word's own trim so both boxes are cap-to-baseline: without it the untrimmed glyph box hangs a descender below the baseline, and "by" and the line itself move with it */
+.sig .ast svg{display:block;width:100%;height:100%}
+.sig .ast .star{fill:var(--human)}
+.sig .ast .key{fill:var(--paper);stroke:var(--paper)}
+@media (prefers-reduced-motion:reduce){.sig:hover .c-tail,.sig:hover .c-eye{animation:none}}

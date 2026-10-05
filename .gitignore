@@ -1,0 +1,15 @@
+.venv/
+dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.sqlite*
+*.npy
+*.npz
+*.log
+.env*
+CHANGES.log
+AGENTS.md
+PRODUCT.md
+DESIGN.md
+.impeccable/
