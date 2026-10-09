@@ -175,7 +175,8 @@ dialog::backdrop { background: #14130Fb3; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 
 /* Restore the master footer defaults beneath the interface icon rules. */
-.sig { --ink: light-dark(#14130F, var(--machine)); color: var(--ink); }
+.sig { --ink: var(--machine); color: var(--ink); }
+.sig .quip { --ink: var(--machine-text); }
 .sig svg { stroke: none; }
 .sig .chip { fill: currentColor; }
 
