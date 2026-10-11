@@ -70,4 +70,4 @@ Tests use synthetic media and cover incremental indexing, removals, metadata fil
 
 Owned code is licensed under [Apache 2.0](LICENSE). Bundled fonts retain their SIL Open Font License notices. Model weights are downloaded separately under their own Apache 2.0 licence. Dependencies retain their licences; no model weights, photo library or search data are included in the package.
 
-<p><a href="https://abcastor.com"><img src="docs/castor-footer.svg" width="350" alt="Chip, the Castor beaver, by Castor, we give a dam"></a></p>
+<p><a href="https://abcastor.com"><img src="docs/castor-footer.svg" width="350" alt="Chip, the Castor beaver, Castor, we give a dam"></a></p>
