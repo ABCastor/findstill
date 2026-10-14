@@ -1,6 +1,8 @@
 <p><img src="docs/findstill-mark.svg" width="40" alt=""><img src="docs/findstill-title.svg" width="172" alt="Findstill"></p>
 
-Findstill is a local search engine for Apple Photos, with a browser gallery and a JSON command-line client. Describe a picture, then narrow the results by people, places or dates.
+Findstill is a local search engine for Apple Photos. Describe a picture, then narrow the results by people, places or dates, from a browser gallery, a JSON command line, an AI chat over [MCP](https://modelcontextprotocol.io) or [Raycast](https://www.raycast.com).
+
+It matches your words against the pictures themselves, using Google's [SigLIP2](https://huggingface.co/google/siglip2-base-patch16-224) image model running on your Mac. Apple Photos search works differently: it matches the labels Photos assigned to each picture, and Apple offers no way for other apps to call it.
 
 [![Checks](https://github.com/ABCastor/findstill/actions/workflows/checks.yml/badge.svg)](https://github.com/ABCastor/findstill/actions/workflows/checks.yml)
 
@@ -39,9 +41,48 @@ uv run findstill open 12345678-1234-1234-1234-123456789012
 
 The CLI returns JSON. `asset --preview-path` adds an existing local preview path for an agent to inspect. Use `options` to discover available people and places. A similarity score ranks matches; it is not the probability that a result is correct. Inspect the image before relying on a match. Named people come from Photos metadata, not face recognition by the model.
 
-The dashboard and CLI use the same index. The server accepts local clients and binds to loopback. It has no remote authentication or cloud endpoint. An agent needs shell access on the Mac and the installed command. The optional [skill](agent-skill/SKILL.md) describes the interface for compatible agent harnesses; install it in that harness's skill directory.
+The dashboard and CLI use the same index. The server accepts local clients and binds to loopback. It has no remote authentication or cloud endpoint. An agent with shell access can use the command directly; the optional [skill](agent-skill/SKILL.md) describes it for compatible agent harnesses. Agents without a shell can use the MCP server below.
 
 `open` selects the exact asset through osxphotos and may require Photos automation permission. A compatible signed Photos helper can be supplied with `install --photos-helper-app /path/to/Helper.app`. **The helper is not distributed here.** The optional `export` command requires that helper's resource-export protocol; a standard installation supports search, previews, reopening and page OCR without it. `export --download-missing` requests only the selected iCloud resource, after explicit selection.
+
+## Search from an AI chat
+
+`findstill-mcp` is an [MCP](https://modelcontextprotocol.io) server for chat apps such as Claude. Install it once, then point your chat app at it:
+
+```sh
+uv sync --frozen --extra mcp --python 3.12
+claude mcp add findstill -- "$PWD/.venv/bin/findstill-mcp"
+```
+
+For Claude Desktop, add the same command under `mcpServers` in its configuration file:
+
+```json
+{ "mcpServers": { "findstill": { "command": "/absolute/path/to/findstill/.venv/bin/findstill-mcp" } } }
+```
+
+Ask for a picture in plain words ("find the photo of the red tram in Lisbon") and the chat calls `search_photos`. In apps that support [MCP Apps](https://github.com/modelcontextprotocol/ext-apps), the results appear as a gallery inside the conversation, and clicking a picture opens it in Apple Photos. Other apps receive a ranked text list plus the first few previews as images, which the model can look at before it answers.
+
+| Tool | What it does |
+|---|---|
+| `search_photos` | Search by description, person, place, date range and media type |
+| `get_photo` | Metadata and a larger preview of one photo |
+| `open_in_photos` | Show one photo in Apple Photos |
+| `photo_filters` | Exact person and place names to filter on |
+| `photo_status` | How much of the library is searchable and how fresh the index is |
+
+The MCP server is a thin client of the running Findstill service (`--url` or `FINDSTILL_URL` to change its address). It never reads the Photos library itself. Previews sent to the chat are small JPEGs without location or camera metadata, but they do leave your Mac if your chat app runs its model in the cloud.
+
+## Search from Raycast
+
+The [`raycast/`](raycast) folder holds a Raycast extension: type a description and pick from a grid of matching photos. Enter opens the selection in Apple Photos; other actions show a larger preview or copy the photo ID. It talks to the same local service, so start Findstill first.
+
+```sh
+cd raycast
+npm ci
+npm run dev
+```
+
+`npm run dev` loads the extension into Raycast. It caches up to 600 small previews in Raycast's private support folder for this extension.
 
 ## Read a paper page
 

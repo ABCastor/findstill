@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Findstill results</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ink: light-dark(#14130F, #E9E6DF);
+    --quiet: light-dark(#4D493F, #BDB8B0);
+    --rule: light-dark(#DDD8CC, #37342E);
+    --ground: light-dark(#F0EDE4, #1F1E1A);
+    --accent: light-dark(#006770, #48A2AA);
+    --error: light-dark(#9E3227, #F08D7D);
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 4px 0 8px; background: transparent; color: var(--color-text-primary, var(--ink));
+         font: 13px/1.4 var(--font-sans, system-ui, -apple-system, sans-serif); }
+  header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin: 0 2px 8px; }
+  #summary { color: var(--color-text-secondary, var(--quiet)); }
+  #status { color: var(--accent); min-height: 1.4em; text-align: right; }
+  #status.error { color: var(--error); }
+  ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+  button { all: unset; display: block; width: 100%; cursor: pointer; border-radius: 8px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .frame { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 8px; background: var(--ground); border: 1px solid var(--rule); }
+  .frame img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s ease; }
+  button:hover .frame img { transform: scale(1.03); }
+  .badge { position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: 4px; font-size: 11px; color: #fff; background: rgb(20 19 15 / .65); }
+  .missing { display: grid; place-items: center; height: 100%; color: var(--quiet); font-size: 12px; padding: 8px; text-align: center; }
+  .caption { margin-top: 4px; color: var(--color-text-secondary, var(--quiet)); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { color: var(--quiet); padding: 12px 2px; }
+  @media (prefers-reduced-motion: reduce) { .frame img { transition: none; } }
+</style>
+</head>
+<body>
+<header><span id="summary">Waiting for results…</span><span id="status" aria-live="polite"></span></header>
+<ol id="grid"></ol>
+<script>
+"use strict";
+const grid = document.getElementById("grid");
+const summary = document.getElementById("summary");
+const status = document.getElementById("status");
+const pending = new Map();
+let nextId = 1;
+let initialized = false;
+
+function send(message) { window.parent.postMessage(message, "*"); }
+function request(method, params) {
+  const id = nextId++;
+  send({ jsonrpc: "2.0", id, method, params });
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+function callTool(name, args) {
+  return request("tools/call", { name, arguments: args }).then((result) => {
+    if (result && result.isError) throw new Error((result.content || []).map((c) => c.text).join(" ") || "Tool failed");
+    return result;
+  });
+}
+function say(text, isError) { status.textContent = text; status.classList.toggle("error", Boolean(isError)); }
+function applyTheme(context) {
+  const theme = context && context.theme;
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+}
+function caption(row) {
+  return [row.date ? row.date.slice(0, 10) : "", row.place].filter(Boolean).join(" · ") || row.filename || "";
+}
+
+function render(result) {
+  const data = result && result.structuredContent;
+  grid.replaceChildren();
+  if (!data || !Array.isArray(data.results)) { summary.textContent = "No gallery data in this result."; return; }
+  if (!data.results.length) { summary.textContent = ""; grid.innerHTML = '<li class="empty">No photos match.</li>'; return; }
+  summary.textContent = `Top ${data.results.length} of ${Number(data.total).toLocaleString()} · click a photo to open it in Photos`;
+  const images = new Map();
+  data.results.forEach((row, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.title = `${caption(row)}\n${row.filename || ""}`;
+    button.setAttribute("aria-label", `Open match ${index + 1} in Apple Photos: ${caption(row)}`);
+    const frame = document.createElement("div");
+    frame.className = "frame";
+    const img = document.createElement("img");
+    img.alt = "";
+    img.hidden = true;
+    frame.append(img);
+    if (row.media_type === "video") {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "Video";
+      frame.append(badge);
+    }
+    const text = document.createElement("div");
+    text.className = "caption";
+    text.textContent = caption(row);
+    button.append(frame, text);
+    button.addEventListener("click", () => openPhoto(row));
+    item.append(button);
+    grid.append(item);
+    images.set(row.uuid, { img, frame });
+  });
+  callTool("photo_thumbnails", { uuids: [...images.keys()] }).then((reply) => {
+    const thumbnails = (reply.structuredContent || {}).thumbnails || {};
+    for (const [uuid, { img, frame }] of images) {
+      if (thumbnails[uuid]) { img.src = thumbnails[uuid]; img.hidden = false; }
+      else frame.insertAdjacentHTML("afterbegin", '<div class="missing">Preview unavailable</div>');
+    }
+  }).catch((error) => say(`Previews unavailable: ${error.message}`, true));
+}
+
+function openPhoto(row) {
+  say("Opening in Photos…");
+  callTool("open_in_photos", { uuid: row.uuid })
+    .then(() => say(`Opened ${caption(row) || "photo"} in Photos`))
+    .catch((error) => say(error.message, true));
+}
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent) return;
+  const message = event.data;
+  if (!message || message.jsonrpc !== "2.0") return;
+  if (message.id !== undefined && pending.has(message.id) && !message.method) {
+    const { resolve, reject } = pending.get(message.id);
+    pending.delete(message.id);
+    message.error ? reject(new Error(message.error.message || "Host error")) : resolve(message.result);
+    return;
+  }
+  if (message.method === "ui/notifications/tool-result") { render(message.params); return; }
+  if (message.method === "ui/notifications/host-context-changed") { applyTheme(message.params); return; }
+  if (message.method === "ui/notifications/tool-cancelled") { summary.textContent = "Search cancelled."; return; }
+  if (message.method === "ui/resource-teardown" && message.id !== undefined) send({ jsonrpc: "2.0", id: message.id, result: {} });
+});
+
+new ResizeObserver(() => {
+  if (initialized) send({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight } });
+}).observe(document.body);
+
+request("ui/initialize", {
+  protocolVersion: "2026-01-26",
+  appInfo: { name: "findstill-gallery", version: "0.3.0" },
+  appCapabilities: { availableDisplayModes: ["inline"] }
+}).then((result) => {
+  initialized = true;
+  applyTheme(result && result.hostContext);
+  send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+}).catch(() => { summary.textContent = "This host could not start the gallery."; });
+</script>
+</body>
+</html>

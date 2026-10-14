@@ -1,6 +1,6 @@
 [project]
 name = "findstill"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local Apple Photos visual search with a gallery and JSON CLI"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -20,12 +20,16 @@ dependencies = [
 ]
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
+mcp = [
+    "mcp>=2,<3",
+]
 [project.urls]
 Repository = "https://github.com/ABCastor/findstill"
 
 [project.scripts]
 findstill = "media_search.cli:main"
 media-search = "media_search.cli:main"
+findstill-mcp = "media_search.mcp_server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

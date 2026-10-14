@@ -24,4 +24,4 @@ For an Obsidian embed, send the exact UUID through the existing Apple Photos plu
 
 `read-page` reads an image locally with Apple Vision and returns raw text lines and geometry. It does not create logbook entries. Handwriting is unreliable; inspect the source before using extracted data.
 
-Use `media-search --help` for commands. Dashboard: http://127.0.0.1:18473. Findstill source: https://github.com/ABCastor/findstill.
+Use `media-search --help` for commands. Chat apps without a shell can use the `findstill-mcp` server instead, which offers the same search with inline previews. Dashboard: http://127.0.0.1:18473. Findstill source: https://github.com/ABCastor/findstill.
