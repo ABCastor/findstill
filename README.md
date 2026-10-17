@@ -96,6 +96,8 @@ uv run findstill read-page /absolute/path/to/page.jpg
 
 Small objects and handwriting may be unreadable in a preview. Screenshot text has no separate OCR index. Video search covers poster images only. There is no folder/document ingestion, transcription or general media index. First semantic searches load the model and take longer than warm requests. Set `MEDIA_SEARCH_DEVICE=cpu` for CPU inference.
 
+The query model unloads after five minutes without a semantic search, checked every 30 seconds. Active searches finish before release; the next search reloads the cached weights automatically. Metadata browsing, thumbnails and status checks do not keep it loaded. This releases model tensors and unused MPS GPU allocations without deleting weights, photos or the index; the Python/PyTorch runtime can still retain memory. The local status API reports `query_model_loaded` and `query_model_idle_seconds`.
+
 Metadata, vectors, settings, display previews and logs stay in `~/Library/Application Support/MediaSearch`, outside the repository. Downloaded model weights use the Hugging Face cache, normally `~/.cache/huggingface`. Set `MEDIA_SEARCH_HOME` for a separate runtime directory. Hidden and trashed Photos items are excluded. Library changes take effect after the next successful refresh; failed refreshes preserve earlier results and report staleness. No Photos database is written.
 
 ## Verify changes

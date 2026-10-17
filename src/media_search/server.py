@@ -1,5 +1,8 @@
 from contextlib import asynccontextmanager
 from datetime import date
+import asyncio
+import logging
+import math
 import os
 import json
 from pathlib import Path
@@ -17,7 +20,9 @@ from .store import Store, public_asset
 from .thumbnails import PreviewUnavailable, ThumbnailCache
 
 
-def create_app(store=None, encoder=None, opener=None):
+def create_app(store=None, encoder=None, opener=None, *, model_idle_seconds=300):
+    if not math.isfinite(model_idle_seconds) or model_idle_seconds <= 0:
+        raise ValueError("Model idle interval must be finite and positive")
     store = store or Store()
     thumbnails = ThumbnailCache(store.home)
     model_lock = threading.Lock()
@@ -31,7 +36,29 @@ def create_app(store=None, encoder=None, opener=None):
                 model = Encoder()
             return model.text(query)
 
-    app = FastAPI(title="Findstill", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(app):
+        stop = threading.Event()
+
+        def release_idle_model():
+            while not stop.wait(min(30, model_idle_seconds)):
+                try:
+                    with model_lock:
+                        release = getattr(model, "unload_if_idle", None)
+                        if release:
+                            release(model_idle_seconds)
+                except Exception:
+                    logging.getLogger(__name__).exception("Idle query-model release failed")
+
+        worker = threading.Thread(target=release_idle_model, name="findstill-model-idle", daemon=True)
+        worker.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            await asyncio.to_thread(worker.join)
+
+    app = FastAPI(title="Findstill", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
     @app.middleware("http")
@@ -63,6 +90,8 @@ def create_app(store=None, encoder=None, opener=None):
         result = store.status()
         result.setdefault("library_total", 0)
         result.setdefault("indexing", False)
+        result["query_model_loaded"] = model is not None and getattr(model, "is_loaded", True)
+        result["query_model_idle_seconds"] = model_idle_seconds
         return result
 
     @app.get("/api/options")
