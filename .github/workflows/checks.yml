@@ -34,6 +34,7 @@ jobs:
           assert (package / 'static/index.html').is_file()
           assert (package / 'static/mcp-gallery.html').is_file()
           assert (package / 'native/ocr.swift').is_file()
+          assert (package / 'native/video.swift').is_file()
           print('Installed wheel module, dashboard and native OCR source present')
           PY
   raycast:

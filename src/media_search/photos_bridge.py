@@ -32,6 +32,9 @@ def snapshot(library_path=None):
             "place": str(place.name or "") if place else "",
             "media_type": "video" if photo.ismovie else "image", "path": path, "paths": paths,
             "modified": photo.date_modified.isoformat() if photo.date_modified else None,
+            # Videos only: length and original size plan the in-video index (originals stay in Photos).
+            "duration": (photo.exif_info.duration if photo.exif_info else None) if photo.ismovie else None,
+            "original_bytes": photo.original_filesize if photo.ismovie else None,
         })
     return {"assets": rows, "excluded": excluded, "provider": "osxphotos", "version": osxphotos.__version__}
 

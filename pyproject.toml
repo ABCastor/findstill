@@ -1,7 +1,7 @@
 [project]
 name = "findstill"
-version = "0.3.0"
-description = "Local Apple Photos visual search with a gallery and JSON CLI"
+version = "0.4.0"
+description = "Local Apple Photos search by picture, and inside videos by what is seen, said and shown, with a gallery and JSON CLI"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 readme = "README.md"
@@ -41,5 +41,6 @@ include = ["src/", "native/", "tests/", "scripts/", "docs/", "agent-skill/", ".g
 
 [tool.hatch.build.targets.wheel.force-include]
 "native/ocr.swift" = "media_search/native/ocr.swift"
+"native/video.swift" = "media_search/native/video.swift"
 [tool.pytest.ini_options]
 testpaths = ["tests"]

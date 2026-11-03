@@ -10,7 +10,7 @@ from .config import settings
 from .store import Store
 
 
-def export_asset(identifier, directory, download_missing=False, *, store=None, config=None):
+def export_asset(identifier, directory, download_missing=False, *, store=None, config=None, timeout=180):
     identifier = str(uuid.UUID(identifier)).upper()
     store = store or Store()
     if not store.asset(identifier):
@@ -32,7 +32,7 @@ def export_asset(identifier, directory, download_missing=False, *, store=None, c
         command.append("--download-missing")
     try:
         subprocess.run(command, check=True, capture_output=True, timeout=10)
-        deadline = time.monotonic() + 180
+        deadline = time.monotonic() + timeout
         while not response.is_file() and time.monotonic() < deadline:
             time.sleep(0.1)
         if not response.is_file():

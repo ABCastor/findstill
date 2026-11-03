@@ -15,3 +15,16 @@ def runtime() -> Path:
 def settings() -> dict:
     file = runtime() / "settings.json"
     return json.loads(file.read_text()) if file.exists() else {}
+
+
+def update_settings(**changes) -> dict:
+    """Merge changes into this app's own private settings file (owner-only permissions)."""
+    file = runtime() / "settings.json"
+    config = settings()
+    if not isinstance(config, dict): raise ValueError("Existing settings must be an object")
+    config.update(changes)
+    temporary = file.with_suffix(".tmp")
+    temporary.write_text(json.dumps(config, indent=2))
+    temporary.chmod(0o600)
+    temporary.replace(file)
+    return config

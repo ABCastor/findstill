@@ -24,6 +24,16 @@ def main():
     indexing = sub.add_parser("index")
     indexing.add_argument("--batch-size", type=int, default=32)
     indexing.add_argument("--limit", type=int, help="Embed at most this many pending items; metadata is synchronized for the full library")
+    videos = sub.add_parser("index-videos", help="Search inside videos: fetch each original once (iCloud download), analyse it on device, delete it")
+    videos.add_argument("--limit", type=int, help="Process at most this many pending videos")
+    videos.add_argument("--uuid", action="append", help="Only this video (repeatable)")
+    videos.add_argument("--retry-failed", action="store_true", help="Retry videos that failed three times")
+    videos.add_argument("--normal-priority", action="store_true", help="Do not lower CPU and disk priority")
+    video_settings = sub.add_parser("video-search", help="Show or change in-video search settings")
+    video_settings.add_argument("mode", nargs="?", choices=("on", "off"), help="Include videos in the scheduled index refresh")
+    video_settings.add_argument("--locales", help="Speech locales to try, comma separated, e.g. it-IT,en-US")
+    video_settings.add_argument("--fetcher", choices=("helper", "osxphotos"), help="How originals are fetched from Photos")
+    video_settings.add_argument("--min-free-gb", type=float, help="Pause indexing below this much free disk space")
     server = sub.add_parser("serve")
     server.add_argument("--port", type=int, default=18473)
     search = sub.add_parser("search")
@@ -64,6 +74,26 @@ def main():
             from .indexer import index
             index(batch_size=args.batch_size, limit=args.limit)
             return
+        if args.command == "index-videos":
+            from .video import index_videos
+            index_videos(Store(), limit=args.limit, uuids=args.uuid, retry_failed=args.retry_failed,
+                         low_priority=not args.normal_priority)
+            return
+        if args.command == "video-search":
+            from .config import settings as read_settings, update_settings
+            from .video import video_config
+            changes = {}
+            if args.mode: changes["video_search"] = args.mode == "on"
+            if args.locales: changes["video_locales"] = [l.strip() for l in args.locales.split(",") if l.strip()]
+            if args.fetcher: changes["video_fetcher"] = args.fetcher
+            if args.min_free_gb is not None: changes["video_min_free_gb"] = args.min_free_gb
+            config = update_settings(**changes) if changes else read_settings()
+            options = video_config(config)
+            from .fetch import default_fetcher
+            print(json.dumps({"video_search": bool(config.get("video_search")), "locales": options["locales"],
+                              "frame_interval_seconds": options["interval"], "fetcher": default_fetcher(config).name,
+                              "min_free_gb": options["min_free_gb"]}, indent=2))
+            return
         if args.command == "serve":
             import uvicorn
             from .server import create_app
@@ -77,7 +107,13 @@ def main():
                 identifier = str(uuid.UUID(args.uuid)).upper()
                 endpoint = f"/api/assets/{identifier}"
                 response = client.post(endpoint+"/open", headers={"X-Media-Search-Client": "cli"}) if args.command == "open" else client.get(endpoint)
-            else: response = client.get("/api/"+args.command)
+            else:
+                try: response = client.get("/api/"+args.command)
+                except httpx.TransportError:
+                    if args.command != "status": raise
+                    # Indexing progress stays readable while the dashboard service is stopped.
+                    print(json.dumps(Store().status() | {"service": "not running"}, ensure_ascii=False, indent=2))
+                    return
             response.raise_for_status()
             data = response.json()
         if args.command == "asset" and args.preview_path:

@@ -83,7 +83,7 @@ function assetTile(asset, index) {
   if (asset.media_type === 'video') {
     const badge = document.createElement('span');
     badge.className = 'media-badge';
-    badge.textContent = 'Video';
+    badge.textContent = asset.moment ? `Video · ${momentLabel(asset.moment)}` : 'Video';
     frame.append(badge);
   }
   const caption = document.createElement('span');
@@ -95,6 +95,12 @@ function assetTile(asset, index) {
   metadata.className = 'photo-meta';
   metadata.textContent = [readableDate(asset.date), asset.place].filter(Boolean).join(' · ');
   caption.append(filename, metadata);
+  if (asset.moment?.snippet) {
+    const words = document.createElement('span');
+    words.className = 'photo-meta';
+    words.textContent = `“${asset.moment.snippet}”`;
+    caption.append(words);
+  }
   tile.append(frame, caption);
   tile.addEventListener('click', () => openDetail(asset, tile));
   return tile;
@@ -165,11 +171,17 @@ function metadataPair(label, value) {
   return pair;
 }
 
+const MOMENT_KIND = {seen: 'Seen', said: 'Said', on_screen: 'On screen'};
+
+function momentLabel(moment) {
+  return `${moment.time_label} · ${(MOMENT_KIND[moment.kind] || moment.kind).toLowerCase()}`;
+}
+
 function renderDetail(asset) {
   byId('detail-title').textContent = asset.filename || 'Photo details';
   const image = byId('detail-image');
   image.alt = `Local preview of ${asset.filename || 'selected photo'}`;
-  const thumbnail = localThumbnail(asset.preview_url || asset.thumbnail_url);
+  const thumbnail = localThumbnail(asset.moment?.frame_url || asset.preview_url || asset.thumbnail_url);
   image.hidden = !thumbnail;
   byId('detail-preview-error').hidden = Boolean(thumbnail);
   if (thumbnail) image.src = thumbnail;
@@ -180,9 +192,15 @@ function renderDetail(asset) {
     metadataPair('Place', asset.place || 'No place recorded'),
     metadataPair('Media', asset.media_type === 'video' ? 'Video preview' : 'Photo'),
   ];
+  if (asset.moment) {
+    pairs.push(metadataPair('Moment', `${MOMENT_KIND[asset.moment.kind] || asset.moment.kind} at ${asset.moment.time_label}`));
+    if (asset.moment.snippet) pairs.push(metadataPair('Words', `“${asset.moment.snippet}”`));
+  }
   if (Number.isFinite(asset.score)) pairs.push(metadataPair('Similarity score', `${asset.score.toFixed(3)} (ranking, not confidence)`));
   byId('detail-metadata').replaceChildren(...pairs);
-  byId('detail-scope').textContent = 'This is a local derivative preview. Photos opens the exact original.';
+  byId('detail-scope').textContent = asset.moment
+    ? `This is the matching frame. Photos opens the video at its start and cannot jump to a time: scrub to ${asset.moment.time_label}.`
+    : 'This is a local derivative preview. Photos opens the exact original.';
 }
 
 async function openDetail(asset, tile) {
@@ -201,7 +219,9 @@ async function openDetail(asset, tile) {
   try {
     const detail = await request(`/api/assets/${encodeURIComponent(asset.uuid)}`, {signal: controller.signal});
     if (controller !== detailController || !dialog.open) return;
-    selectedAsset = {...asset, ...detail, score: Number.isFinite(detail.score) ? detail.score : asset.score};
+    // The detail endpoint knows the asset, not the search; keep the moment that matched.
+    selectedAsset = {...asset, ...detail, score: Number.isFinite(detail.score) ? detail.score : asset.score,
+      moment: asset.moment, moments: asset.moments, thumbnail_url: asset.thumbnail_url};
     renderDetail(selectedAsset);
   } catch (error) {
     if (error.name === 'AbortError' || controller !== detailController) return;
@@ -220,9 +240,12 @@ async function openPhotos() {
   button.querySelector('span').textContent = 'Opening…';
   byId('detail-error').hidden = true;
   try {
-    const result = await request(`/api/assets/${encodeURIComponent(assetId)}/open`, {method: 'POST'});
+    const time = selectedAsset.moment ? `?t=${encodeURIComponent(selectedAsset.moment.time)}` : '';
+    const result = await request(`/api/assets/${encodeURIComponent(assetId)}/open${time}`, {method: 'POST'});
     if (result.ok !== true) throw new Error('Photos did not confirm the open request. Try again.');
-    if (selectedAsset?.uuid === assetId && dialog.open) button.querySelector('span').textContent = 'Opened in Photos';
+    if (selectedAsset?.uuid === assetId && dialog.open) {
+      button.querySelector('span').textContent = result.scrub_to ? `Opened · scrub to ${result.scrub_to}` : 'Opened in Photos';
+    }
   } catch (error) {
     if (selectedAsset?.uuid === assetId && dialog.open) {
       byId('detail-error').textContent = `Couldn’t open this original. ${errorText(error)}`;

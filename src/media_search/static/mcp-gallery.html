@@ -69,6 +69,11 @@ function caption(row) {
   return [row.date ? row.date.slice(0, 10) : "", row.place].filter(Boolean).join(" · ") || row.filename || "";
 }
 
+const KIND = { seen: "seen", said: "said", on_screen: "on screen" };
+function momentLabel(moment) {
+  return moment ? `${moment.time_label} · ${KIND[moment.kind] || moment.kind}` : "";
+}
+
 function render(result) {
   const data = result && result.structuredContent;
   grid.replaceChildren();
@@ -76,11 +81,13 @@ function render(result) {
   if (!data.results.length) { summary.textContent = ""; grid.innerHTML = '<li class="empty">No photos match.</li>'; return; }
   summary.textContent = `Top ${data.results.length} of ${Number(data.total).toLocaleString()} · click a photo to open it in Photos`;
   const images = new Map();
+  const frames = {};
   data.results.forEach((row, index) => {
     const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.title = `${caption(row)}\n${row.filename || ""}`;
+    const moment = row.moment;
+    button.title = [caption(row), row.filename || "", moment ? momentLabel(moment) : "", moment && moment.snippet ? `“${moment.snippet}”` : ""].filter(Boolean).join("\n");
     button.setAttribute("aria-label", `Open match ${index + 1} in Apple Photos: ${caption(row)}`);
     const frame = document.createElement("div");
     frame.className = "frame";
@@ -91,7 +98,7 @@ function render(result) {
     if (row.media_type === "video") {
       const badge = document.createElement("span");
       badge.className = "badge";
-      badge.textContent = "Video";
+      badge.textContent = moment ? `Video · ${momentLabel(moment)}` : "Video";
       frame.append(badge);
     }
     const text = document.createElement("div");
@@ -102,8 +109,9 @@ function render(result) {
     item.append(button);
     grid.append(item);
     images.set(row.uuid, { img, frame });
+    if (moment && moment.frame_id) frames[row.uuid] = moment.frame_id;
   });
-  callTool("photo_thumbnails", { uuids: [...images.keys()] }).then((reply) => {
+  callTool("photo_thumbnails", { uuids: [...images.keys()], frames }).then((reply) => {
     const thumbnails = (reply.structuredContent || {}).thumbnails || {};
     for (const [uuid, { img, frame }] of images) {
       if (thumbnails[uuid]) { img.src = thumbnails[uuid]; img.hidden = false; }
@@ -114,8 +122,9 @@ function render(result) {
 
 function openPhoto(row) {
   say("Opening in Photos…");
-  callTool("open_in_photos", { uuid: row.uuid })
-    .then(() => say(`Opened ${caption(row) || "photo"} in Photos`))
+  const args = row.moment ? { uuid: row.uuid, time: row.moment.time } : { uuid: row.uuid };
+  callTool("open_in_photos", args)
+    .then(() => say(row.moment ? `Opened the video in Photos · scrub to ${row.moment.time_label}` : `Opened ${caption(row) || "photo"} in Photos`))
     .catch((error) => say(error.message, true));
 }
 

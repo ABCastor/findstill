@@ -8,6 +8,7 @@ import warnings
 
 from PIL import Image, UnidentifiedImageError
 
+from . import native
 from .config import runtime
 
 MAX_EDGE = 12_000
@@ -41,30 +42,8 @@ def _run(arguments: list[str], *, timeout: int) -> subprocess.CompletedProcess:
 
 def _helper() -> Path:
     # Lock only compilation. Separate OCR calls can safely share the immutable binary.
-    import fcntl
-    source = _source()
-    fingerprint = hashlib.sha256(b"macos12-target-sdk-v1" + source.read_bytes() + platform.machine().encode()
-                                 + platform.mac_ver()[0].encode()).hexdigest()[:20]
-    home = runtime()
-    binary_dir = home / "bin"
-    binary_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    binary = binary_dir / f"ocr-{fingerprint}"
-    with (binary_dir / "ocr-compile.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        if not binary.is_file():
-            compiler = _run(["/usr/bin/xcrun", "--find", "swiftc"], timeout=30).stdout.strip()
-            if not compiler:
-                raise OCRError("Swift compiler unavailable; install Xcode Command Line Tools")
-            sdk = _run(["/usr/bin/xcrun", "--show-sdk-path"], timeout=30).stdout.strip()
-            if not sdk:
-                raise OCRError("macOS SDK unavailable; install Xcode Command Line Tools")
-            pending = binary.with_suffix(".pending")
-            _run([compiler, "-O", "-target", f"{platform.machine()}-apple-macosx12.0",
-                  "-sdk", sdk, "-module-cache-path", str(home / "swift-module-cache"),
-                  str(source), "-o", str(pending)], timeout=120)
-            pending.chmod(0o700)
-            pending.replace(binary)
-    return binary
+    return native.helper("ocr", "12.0", source_path=_source(), home=runtime(), error=OCRError,
+                         runner=lambda arguments, *, timeout: _run(arguments, timeout=int(timeout)))
 
 
 def read_page(path: str | Path) -> dict:

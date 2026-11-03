@@ -1,12 +1,12 @@
 <p><img src="docs/findstill-mark.svg" width="40" alt=""><img src="docs/findstill-title.svg" width="172" alt="Findstill"></p>
 
-Findstill is a local search engine for Apple Photos. Describe a picture, then narrow the results by people, places or dates, from a browser gallery, a JSON command line, an AI chat over [MCP](https://modelcontextprotocol.io) or [Raycast](https://www.raycast.com).
+Findstill is a local search engine for Apple Photos. Describe a picture, or a phrase someone said in a video, then narrow the results by people, places or dates, from a browser gallery, a JSON command line, an AI chat over [MCP](https://modelcontextprotocol.io) or [Raycast](https://www.raycast.com).
 
 It matches your words against the pictures themselves, using Google's [SigLIP2](https://huggingface.co/google/siglip2-base-patch16-224) image model running on your Mac. Apple Photos search works differently: it matches the labels Photos assigned to each picture, and Apple offers no way for other apps to call it.
 
 [![Checks](https://github.com/ABCastor/findstill/actions/workflows/checks.yml/badge.svg)](https://github.com/ABCastor/findstill/actions/workflows/checks.yml)
 
-**Experimental, macOS only.** Search reads locally available photo previews and video poster images from one selected Photos library. It does not search every video frame or every folder on your Mac.
+**Experimental, macOS only.** Search reads locally available photo previews and video poster images from one selected Photos library. Searching inside videos is opt-in, because it downloads each video from iCloud once (see [Search inside videos](#search-inside-videos)). Findstill does not search folders elsewhere on your Mac.
 
 ## Run it
 
@@ -44,6 +44,29 @@ The CLI returns JSON. `asset --preview-path` adds an existing local preview path
 The dashboard and CLI use the same index. The server accepts local clients and binds to loopback. It has no remote authentication or cloud endpoint. An agent with shell access can use the command directly; the optional [skill](agent-skill/SKILL.md) describes it for compatible agent harnesses. Agents without a shell can use the MCP server below.
 
 `open` selects the exact asset through osxphotos and may require Photos automation permission. A compatible signed Photos helper can be supplied with `install --photos-helper-app /path/to/Helper.app`. **The helper is not distributed here.** The optional `export` command requires that helper's resource-export protocol; a standard installation supports search, previews, reopening and page OCR without it. `export --download-missing` requests only the selected iCloud resource, after explicit selection.
+
+## Search inside videos
+
+With video search on, a result can be a moment inside a video: the time, the frame from that moment, and how it matched. A moment is **seen** (a frame looks like your description), **said** (the words were spoken) or **on screen** (the words were written in the picture, such as a sign or an instrument panel), with the matching words for the last two.
+
+```sh
+uv run findstill video-search on --locales it-IT,en-US   # opt in; list the languages people speak in your videos
+uv run findstill index-videos --limit 20                  # try it on the 20 newest videos first
+uv run findstill status                                   # "video": done, failed, pending
+uv run findstill search 'cleared to land'
+```
+
+For each video, Findstill fetches the original into a private temporary folder, takes a frame every 2 seconds, drops frames that look the same as the one before, embeds the rest with SigLIP2, reads their text with Apple Vision, and transcribes the audio on device with Apple's SpeechAnalyzer. Then it deletes the original. One video is on disk at a time. Speech is transcribed once per listed language, and Findstill keeps the transcript whose words Apple's language recogniser agrees are in that language, because a wrong-language pass produces fluent nonsense. If none agrees, it stores no transcript for that video.
+
+What this costs you:
+
+- **iCloud downloads.** Most libraries keep videos in iCloud only. Each video is downloaded once, through Photos. Photos may keep that downloaded original in its own library until its storage optimisation removes it, so your Photos library can grow while indexing runs. Findstill pauses when free space falls below a floor (default 10 GB; `video-search --min-free-gb 30` to raise it) and continues on the next run.
+- **Time.** On an Apple Silicon Mac a test of 20 videos (12 minutes of footage) took 5 minutes, including downloads. Indexing runs at low CPU priority and resumes where it stopped; videos already indexed are skipped unless they change.
+- **macOS 26 or newer** for on-device transcription, and Xcode Command Line Tools to build the bundled Swift helper on first use.
+
+Two download routes sit behind one interface. The default is `osxphotos export --download-missing`, through the osxphotos interpreter you installed; Photos does the download, and it may ask you to allow automation of Photos (or Photos access, with `video_osxphotos_photokit` set). A compatible signed Photos helper, configured with `install --photos-helper-app`, is used instead when present. **The helper is not distributed here**, and the osxphotos route has only been tested by its unit tests so far, not against a real iCloud library.
+
+Photos opens a video at its start and has no way to jump to a time, so Open in Photos tells you the time to scrub to. Transcripts and on-screen text stay in `video-index.sqlite3` in the private data folder (owner-only permissions), next to small thumbnails of the kept frames. They are never written to Photos, logs or the repository.
 
 ## Search from an AI chat
 
@@ -94,11 +117,11 @@ uv run findstill read-page /absolute/path/to/page.jpg
 
 ## Limits and local data
 
-Small objects and handwriting may be unreadable in a preview. Screenshot text has no separate OCR index. Video search covers poster images only. There is no folder/document ingestion, transcription or general media index. First semantic searches load the model and take longer than warm requests. Set `MEDIA_SEARCH_DEVICE=cpu` for CPU inference.
+Small objects and handwriting may be unreadable in a preview. Screenshot text has no separate OCR index. Without video search, videos are found by their poster image only. A single search word interleaves video moments with the best visual matches; a whole phrase said or shown word for word ranks first. There is no folder or document ingestion. First semantic searches load the model and take longer than warm requests. Set `MEDIA_SEARCH_DEVICE=cpu` for CPU inference.
 
 The query model unloads after five minutes without a semantic search, checked every 30 seconds. Active searches finish before release; the next search reloads the cached weights automatically. Metadata browsing, thumbnails and status checks do not keep it loaded. This releases model tensors and unused MPS GPU allocations without deleting weights, photos or the index; the Python/PyTorch runtime can still retain memory. The local status API reports `query_model_loaded` and `query_model_idle_seconds`.
 
-Metadata, vectors, settings, display previews and logs stay in `~/Library/Application Support/MediaSearch`, outside the repository. Downloaded model weights use the Hugging Face cache, normally `~/.cache/huggingface`. Set `MEDIA_SEARCH_HOME` for a separate runtime directory. Hidden and trashed Photos items are excluded. Library changes take effect after the next successful refresh; failed refreshes preserve earlier results and report staleness. No Photos database is written.
+Metadata, vectors, video transcripts and on-screen text, frame thumbnails, settings, display previews and logs stay in `~/Library/Application Support/MediaSearch`, outside the repository. Downloaded model weights use the Hugging Face cache, normally `~/.cache/huggingface`. Set `MEDIA_SEARCH_HOME` for a separate runtime directory. Hidden and trashed Photos items are excluded. Library changes take effect after the next successful refresh; failed refreshes preserve earlier results and report staleness. No Photos database is written.
 
 ## Verify changes
 
@@ -109,7 +132,7 @@ uv run python scripts/check_privacy.py
 uv build
 ```
 
-Tests use synthetic media and cover incremental indexing, removals, metadata filters, cached-vector invalidation, preview fallback, exact reopening identifiers, local request boundaries and native OCR integration. They do not establish retrieval accuracy on your library.
+Tests use synthetic media and cover incremental indexing, removals, metadata filters, cached-vector invalidation, preview fallback, exact reopening identifiers, local request boundaries, native OCR integration, and for video: frame deduplication, language choice, resume and skip, keyword ranking, result shape and, on macOS 26 with ffmpeg, a synthetic clip through the native helper. They do not establish retrieval accuracy on your library. `scripts/bench_search.py` measures warm search latency against a running service.
 
 Owned code is licensed under [Apache 2.0](LICENSE). Bundled fonts retain their SIL Open Font License notices. Model weights are downloaded separately under their own Apache 2.0 licence. Dependencies retain their licences; no model weights, photo library or search data are included in the package.
 

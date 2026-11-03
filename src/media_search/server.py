@@ -109,7 +109,7 @@ def create_app(store=None, encoder=None, opener=None, *, model_idle_seconds=300)
         if date_from and date_to and date_from > date_to: raise HTTPException(422, "Start date must precede end date")
         if media_type not in ("", "image", "video"): raise HTTPException(422, "Unknown media type")
         vector = text_vector(q.strip()) if q.strip() else None
-        result = store.search(vector, limit, person, place, date_from, date_to, media_type)
+        result = store.search(vector, limit, person, place, date_from, date_to, media_type, text=q.strip())
         result["elapsed_ms"] = round((time.perf_counter()-start)*1000, 1)
         return result
 
@@ -137,8 +137,15 @@ def create_app(store=None, encoder=None, opener=None, *, model_idle_seconds=300)
     def preview(identifier: str):
         return image_response(identifier, 2048)
 
+    @app.get("/api/assets/{identifier}/frames/{frame_id}")
+    def video_frame(identifier: str, frame_id: int):
+        row = asset(identifier)
+        path = store.videos.frame_path(row["uuid"], frame_id)
+        if not path: raise HTTPException(404, "Video frame unavailable; the video may have been re-indexed")
+        return FileResponse(path, media_type="image/jpeg")
+
     @app.post("/api/assets/{identifier}/open")
-    def open_asset(identifier: str):
+    def open_asset(identifier: str, t: float | None = Query(None, ge=0, le=86400)):
         row = asset(identifier)
         if opener:
             opener(row["uuid"])
@@ -162,7 +169,12 @@ def create_app(store=None, encoder=None, opener=None, *, model_idle_seconds=300)
                     subprocess.run([interpreter, command, "show", row["uuid"]], check=True, capture_output=True, timeout=45)
             except (subprocess.SubprocessError, OSError):
                 raise HTTPException(503, "Photos could not open the item; check local automation permission")
-        return {"ok": True, "uuid": row["uuid"]}
+        result = {"ok": True, "uuid": row["uuid"]}
+        if t is not None and row.get("media_type") == "video":
+            from .video import time_label
+            # Photos opens a video at its start; it offers no way to seek, so say where to scrub.
+            result["scrub_to"] = time_label(t)
+        return result
 
     static = Path(__file__).with_name("static")
     if static.is_dir():

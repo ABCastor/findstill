@@ -14,6 +14,14 @@ import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { useEffect, useState } from "react";
 
+type Moment = {
+  kind: "seen" | "said" | "on_screen";
+  time: number;
+  time_label: string;
+  snippet?: string;
+  frame_url?: string | null;
+};
+
 type Photo = {
   uuid: string;
   filename: string;
@@ -24,7 +32,14 @@ type Photo = {
   score: number | null;
   thumbnail_url: string;
   preview_url: string;
+  moment?: Moment;
 };
+
+const kinds = { seen: "seen", said: "said", on_screen: "on screen" };
+
+function momentLabel(moment: Moment) {
+  return `${moment.time_label} · ${kinds[moment.kind] ?? moment.kind}`;
+}
 
 type SearchResponse = { results: Photo[]; total: number };
 
@@ -38,8 +53,16 @@ const cache = join(environment.supportPath, "previews");
 const cacheLimit = 600;
 const inflight = new Map<string, Promise<string | undefined>>();
 
+function imageUrl(photo: Photo, kind: "thumbnail" | "preview") {
+  // A video moment shows its matching frame; Photos itself cannot jump to that time.
+  if (photo.moment?.frame_url) return photo.moment.frame_url;
+  return kind === "thumbnail" ? photo.thumbnail_url : photo.preview_url;
+}
+
 async function cachedImage(photo: Photo, kind: "thumbnail" | "preview") {
-  const file = join(cache, `${photo.uuid}-${kind}.jpg`);
+  const url = imageUrl(photo, kind);
+  const frame = url.match(/\/frames\/(\d+)$/)?.[1];
+  const file = join(cache, frame ? `${photo.uuid}-frame-${frame}.jpg` : `${photo.uuid}-${kind}.jpg`);
   const key = file;
   if (!inflight.has(key)) {
     inflight.set(
@@ -49,7 +72,7 @@ async function cachedImage(photo: Photo, kind: "thumbnail" | "preview") {
           await stat(file);
           return file;
         } catch {
-          const response = await fetch(`${service}${kind === "thumbnail" ? photo.thumbnail_url : photo.preview_url}`);
+          const response = await fetch(`${service}${url}`);
           if (!response.ok) return undefined;
           await mkdir(cache, { recursive: true, mode: 0o700 });
           await writeFile(file, Buffer.from(await response.arrayBuffer()), { mode: 0o600 });
@@ -88,7 +111,7 @@ function useImages(photos: Photo[], kind: "thumbnail" | "preview") {
     return () => {
       live = false;
     };
-  }, [photos.map((photo) => photo.uuid).join(), kind]);
+  }, [photos.map((photo) => `${photo.uuid}${photo.moment?.frame_url ?? ""}`).join(), kind]);
   return paths;
 }
 
@@ -99,7 +122,8 @@ function caption(photo: Photo) {
 async function openInPhotos(photo: Photo) {
   const toast = await showToast({ style: Toast.Style.Animated, title: "Opening in Photos" });
   try {
-    const response = await fetch(`${service}/api/assets/${photo.uuid}/open`, {
+    const time = photo.moment ? `?t=${encodeURIComponent(photo.moment.time)}` : "";
+    const response = await fetch(`${service}/api/assets/${photo.uuid}/open${time}`, {
       method: "POST",
       headers: { "X-Media-Search-Client": "cli" },
     });
@@ -107,6 +131,7 @@ async function openInPhotos(photo: Photo) {
       throw new Error(((await response.json()) as { detail?: string }).detail || `HTTP ${response.status}`);
     toast.style = Toast.Style.Success;
     toast.title = "Opened in Photos";
+    if (photo.moment) toast.message = `Scrub to ${photo.moment.time_label}`;
   } catch (error) {
     toast.style = Toast.Style.Failure;
     toast.title = "Photos could not open it";
@@ -127,6 +152,8 @@ function PhotoDetail({ photo }: { photo: Photo }) {
           {photo.place ? <Detail.Metadata.Label title="Place" text={photo.place} /> : null}
           {photo.persons.length ? <Detail.Metadata.Label title="People" text={photo.persons.join(", ")} /> : null}
           <Detail.Metadata.Label title="File" text={photo.filename} />
+          {photo.moment ? <Detail.Metadata.Label title="Moment" text={momentLabel(photo.moment)} /> : null}
+          {photo.moment?.snippet ? <Detail.Metadata.Label title="Words" text={`“${photo.moment.snippet}”`} /> : null}
         </Detail.Metadata>
       }
       actions={<Actions photo={photo} />}
@@ -171,7 +198,7 @@ export default function Command() {
       throttle
       searchText={query}
       onSearchTextChange={setQuery}
-      searchBarPlaceholder="Describe a photo, like a dog on a sailing boat"
+      searchBarPlaceholder="Describe a photo, or words said or shown in a video"
       searchBarAccessory={
         <Grid.Dropdown tooltip="Media type" onChange={setMediaType} storeValue>
           <Grid.Dropdown.Item title="Photos and Videos" value="" />
@@ -196,7 +223,13 @@ export default function Command() {
               key={photo.uuid}
               content={thumbnails[photo.uuid] ? { source: thumbnails[photo.uuid] } : ""}
               title={caption(photo)}
-              subtitle={photo.media_type === "video" ? "Video" : photo.persons.join(", ")}
+              subtitle={
+                photo.media_type === "video"
+                  ? photo.moment
+                    ? `Video · ${momentLabel(photo.moment)}`
+                    : "Video"
+                  : photo.persons.join(", ")
+              }
               actions={<Actions photo={photo} detail />}
             />
           ))}

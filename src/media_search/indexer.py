@@ -99,3 +99,13 @@ def index(store=None, batch_size=32, limit=None, encoder=None):
         raise
     finally:
         lock.close()
+    if config.get("video_search") and limit is None:
+        # Opt-in: in-video search downloads each original from iCloud once, so it never runs by default.
+        from .video import LowDisk, index_videos
+        try:
+            index_videos(store, config=config, encoder=encoder)
+        except LowDisk as error:
+            print(json.dumps({"video_index": str(error)}), flush=True)
+        except RuntimeError as error:
+            if "Another video indexing process" not in str(error): raise
+            print(json.dumps({"video_index": "already running"}), flush=True)
